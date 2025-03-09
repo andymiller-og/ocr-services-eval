@@ -88,17 +88,14 @@ class OCRServices:
                         response = textract_client.analyze_expense(
                             Document={'Bytes': image_bytes}
                         )
-                        all_responses.append((page_num, response))
+                        # Clean the response to remove Geometry, BoundingBox, and Polygon fields
+                        cleaned_response = OCRServices._clean_textract_response(response)
+                        all_responses.append((page_num, cleaned_response))
                     
-                    # Format the combined responses
+                    # Format the combined responses - only include the summary, not the full JSON
                     combined_summary = "AWS Textract Analysis Summary (Multiple Pages):\n\n"
-                    combined_full_response = ""
                     
                     for page_num, response in all_responses:
-                        # Format the response for display
-                        formatted_response = json.dumps(response, indent=2, default=str)
-                        combined_full_response += f"\n\n--- PAGE {page_num} ---\n{formatted_response}"
-                        
                         # Extract key information based on the API used
                         if 'ExpenseDocuments' in response:
                             # This is an analyze_expense response
@@ -128,8 +125,8 @@ class OCRServices:
                                                         field_value = field.get('ValueDetection', {}).get('Text', 'N/A')
                                                         combined_summary += f"      {field_type}: {field_value}\n"
                     
-                    # Return both the summary and the full response
-                    return f"{combined_summary}\n\nFull Response:{combined_full_response}"
+                    # Return only the summary, not the full JSON response
+                    return combined_summary
 
                 except ImportError as ie:
                     return f"PDF processing error: {str(ie)}"
@@ -142,20 +139,20 @@ class OCRServices:
                         Document={'Bytes': image_bytes}
                     )
                     
-                    # Format the response for display
-                    formatted_response = json.dumps(response, indent=2, default=str)
+                    # Clean the response to remove Geometry, BoundingBox, and Polygon fields
+                    cleaned_response = OCRServices._clean_textract_response(response)
                     
                     # Extract text from response
                     summary = "AWS Textract Analysis Summary (DetectDocumentText):\n\n"
                     extracted_text = ""
-                    for item in response.get("Blocks", []):
+                    for item in cleaned_response.get("Blocks", []):
                         if item.get("BlockType") == "LINE":
                             extracted_text += item.get("Text", "") + "\n"
                     
                     summary += "Extracted Text:\n" + extracted_text
                     
-                    # Return both the summary and the full response
-                    return f"{summary}\n\nFull Response:\n{formatted_response}"
+                    # Return only the summary, not the full JSON response
+                    return summary
             else:
                 # For images, directly read the file
                 with open(file_path, 'rb') as document:
@@ -166,15 +163,15 @@ class OCRServices:
                     Document={'Bytes': image_bytes}
                 )
                 
-                # Format the response for display
-                formatted_response = json.dumps(response, indent=2, default=str)
+                # Clean the response to remove Geometry, BoundingBox, and Polygon fields
+                cleaned_response = OCRServices._clean_textract_response(response)
                 
                 # Extract key information based on the API used
-                if 'ExpenseDocuments' in response:
+                if 'ExpenseDocuments' in cleaned_response:
                     # This is an analyze_expense response
                     summary = "AWS Textract Analysis Summary (AnalyzeExpense):\n\n"
 
-                    for doc_idx, doc in enumerate(response['ExpenseDocuments']):
+                    for doc_idx, doc in enumerate(cleaned_response['ExpenseDocuments']):
                         summary += f"Document {doc_idx + 1}:\n"
 
                         # Extract summary fields
@@ -198,11 +195,62 @@ class OCRServices:
                                                 field_value = field.get('ValueDetection', {}).get('Text', 'N/A')
                                                 summary += f"      {field_type}: {field_value}\n"
                 
-                # Return both the summary and the full response
-                return f"{summary}\n\nFull Response:\n{formatted_response}"
+                # Return only the summary, not the full JSON response
+                return summary
 
         except Exception as e:
             return f"Error processing with AWS Textract: {str(e)}"
+
+    @staticmethod
+    def _clean_textract_response(response):
+        """
+        Remove Geometry, BoundingBox, and Polygon fields from AWS Textract response
+        
+        Args:
+            response (dict): The original AWS Textract response
+            
+        Returns:
+            dict: The cleaned response with unwanted fields removed
+        """
+        # Create a deep copy of the response to avoid modifying the original
+        full_response = json.loads(json.dumps(response))
+        
+        # Fields to remove (expanded list to catch variations)
+        fields_to_remove = [
+            'Geometry', 'BoundingBox', 'Polygon', 'Relationships',
+            'RowIndex', 'ColumnIndex', 'RowSpan', 'ColumnSpan',
+            'CellGeometry', 'TableGeometry', 'TableBoundingBox', 'TablePolygon'
+        ]
+        
+        # Helper function to recursively remove fields from a dictionary
+        def remove_fields(obj):
+            if isinstance(obj, dict):
+                # Remove unwanted fields
+                for field in fields_to_remove:
+                    if field in obj:
+                        del obj[field]
+                
+                # Process remaining fields recursively
+                for key, value in list(obj.items()):
+                    obj[key] = remove_fields(value)
+                return obj
+            elif isinstance(obj, list):
+                # Process list items recursively
+                return [remove_fields(item) for item in obj]
+            else:
+                # Return primitive values as is
+                return obj
+        
+        # Clean the response
+        cleaned = remove_fields(full_response)
+        
+        # For debugging: print the size reduction
+        original_size = len(json.dumps(response))
+        cleaned_size = len(json.dumps(cleaned))
+        reduction_percent = ((original_size - cleaned_size) / original_size) * 100 if original_size > 0 else 0
+        print(f"AWS Textract response cleaning: Original size: {original_size}, Cleaned size: {cleaned_size}, Reduction: {reduction_percent:.2f}%")
+        
+        return cleaned
 
     @staticmethod
     def landing_ai_ocr(file_path):

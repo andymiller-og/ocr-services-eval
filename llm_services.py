@@ -4,7 +4,6 @@ import requests
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import HumanMessage, SystemMessage
 
 # Load environment variables
@@ -25,18 +24,12 @@ class LLMServices:
             str: Analysis and comparison of the OCR results
         """
         try:
-            # Convert results to a string and chunk it if necessary
-            results_str = json.dumps(results, indent=2)
-            
-            # Create a text splitter for chunking large inputs
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=4000,
-                chunk_overlap=200,
-                length_function=len,
-            )
-            
-            # Split the results into chunks
-            chunks = text_splitter.split_text(results_str)
+            # Create a formatted string with clearly labeled results for each service
+            formatted_results = ""
+            for service_name, result in results.items():
+                formatted_results += f"\n\n### {service_name} Results ###\n\n"
+                formatted_results += result
+                formatted_results += "\n\n" + "-"*50 + "\n\n"  # Add a separator between services
             
             # Create a summary of the OCR results for the prompt
             summary = "OCR Results Summary:\n"
@@ -50,16 +43,27 @@ class LLMServices:
             Provide a detailed analysis of the strengths and weaknesses of each OCR service.
             Format your response in markdown."""
             
-            # Prepare the user prompt
+            # Prepare the user prompt with the clearly labeled results
             user_prompt = f"""
             Compare the following OCR services based on their results:
             
             {summary}
             
-            I'll provide the detailed results in chunks due to their size.
+            Below are the detailed OCR results from each service. Each service's results are clearly labeled.
             
-            First chunk of results:
-            {chunks[0]}
+            {formatted_results}
+            
+            Please provide a comprehensive analysis of which OCR service performed best and why.
+            Consider factors such as:
+            1. Text accuracy and correctness
+            2. Formatting preservation
+            3. Handling of special characters and symbols
+            4. Recognition of tables and structured data
+            5. Overall completeness of the extracted text
+            6. Handling of multi-page documents (if applicable)
+            
+            For each service, identify specific strengths and weaknesses with examples from the results.
+            Conclude with a recommendation of which service would be best for this type of document.
             """
             
             # Initialize the appropriate LLM based on the model choice
@@ -71,7 +75,8 @@ class LLMServices:
                 llm = ChatOpenAI(
                     model="gpt-4o",
                     temperature=0.7,
-                    api_key=api_key
+                    api_key=api_key,
+                    max_tokens=4000  # Set a reasonable limit for the response
                 )
             elif model_choice == "Claude Sonnet 3.5":
                 api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -81,35 +86,22 @@ class LLMServices:
                 llm = ChatAnthropic(
                     model="claude-3-sonnet-20240229",
                     temperature=0.7,
-                    api_key=api_key
+                    api_key=api_key,
+                    max_tokens=4000  # Set a reasonable limit for the response
                 )
             else:
                 return f"Unsupported model choice: {model_choice}"
             
-            # Create the initial messages
+            # Create the messages
             messages = [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt)
             ]
             
-            # Get the initial response
+            # Get the response
             response = llm.invoke(messages)
             
-            # If there are more chunks, continue the conversation
-            if len(chunks) > 1:
-                for i, chunk in enumerate(chunks[1:], 1):
-                    follow_up = f"""
-                    Here's chunk {i+1} of the OCR results:
-                    
-                    {chunk}
-                    
-                    Please update your analysis based on this additional information.
-                    """
-                    
-                    messages.append(HumanMessage(content=follow_up))
-                    response = llm.invoke(messages)
-            
-            # Return the final response content
+            # Return the response content
             return response.content
 
         except Exception as e:

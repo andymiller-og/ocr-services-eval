@@ -58,10 +58,10 @@ def display_image(image_path):
 # Function to process document with OCR services
 def process_document(file_path, ocr_services):
     results = {}
-    
+
     # Create tabs for each OCR service
     ocr_tabs = st.tabs(ocr_services)
-    
+
     for i, service in enumerate(ocr_services):
         with ocr_tabs[i]:
             if service == "AWS Textract":
@@ -69,23 +69,29 @@ def process_document(file_path, ocr_services):
                     result = OCRServices.aws_textract_ocr(file_path)
                     results["AWS Textract"] = result
                     st.text_area("AWS Textract Result", result, height=400)
-            
+
             elif service == "Landing AI":
                 with st.spinner("Processing with Landing AI..."):
                     result = OCRServices.landing_ai_ocr(file_path)
                     results["Landing AI"] = result
                     st.text_area("Landing AI Result", result, height=400)
-            
+
             elif service == "Mistral OCR":
                 with st.spinner("Processing with Mistral OCR..."):
                     result = OCRServices.mistral_ocr(file_path)
                     results["Mistral OCR"] = result
                     st.text_area("Mistral OCR Result", result, height=400)
-    
+
+            elif service == "Claude 3 Haiku":
+                with st.spinner("Processing with Claude 3 Haiku..."):
+                    result = OCRServices.claude_haiku_ocr(file_path)
+                    results["Claude 3 Haiku"] = result
+                    st.text_area("Claude 3 Haiku Result", result, height=400)
+
     # Store results in session state for later comparison
     st.session_state.ocr_results = results
     st.session_state.processed = True
-    
+
     return results
 
 
@@ -131,14 +137,14 @@ def main():
         st.subheader("Select OCR Services to Test")
         ocr_services = st.multiselect(
             "Choose one or more OCR services:",
-            ["AWS Textract", "Landing AI", "Mistral OCR"],
+            ["AWS Textract", "Landing AI", "Mistral OCR", "Claude 3 Haiku"],
             default=["AWS Textract"]
         )
 
         if ocr_services:
             # Process button
             test_button = st.button("Get OCR Results")
-            
+
             # Process document if button is clicked or if already processed
             if test_button:
                 st.session_state.processed = False  # Reset processed state
@@ -153,21 +159,21 @@ def main():
                 for i, (service, result) in enumerate(st.session_state.ocr_results.items()):
                     with ocr_tabs[i]:
                         st.text_area(f"{service} Result", result, height=400)
-            
+
             # Add LLM comparison section if we have results
             if st.session_state.processed and len(st.session_state.ocr_results) > 1:
                 st.subheader("LLM Comparison")
-                
+
                 # Model selection dropdown
                 model_choice = st.selectbox(
                     "Select LLM model for comparison:",
                     ["OpenAI GPT-4o", "Claude Sonnet 3.5"],
                     index=0
                 )
-                
+
                 # Compare button
                 compare_button = st.button("Compare Results with LLM")
-                
+
                 if compare_button:
                     comparison = compare_results(st.session_state.ocr_results, model_choice)
                     st.markdown(comparison)

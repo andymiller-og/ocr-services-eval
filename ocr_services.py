@@ -25,13 +25,13 @@ class OCRServices:
         try:
             from pdf2image import convert_from_path
             import io
-            
+
             # Convert PDF to images
             images = convert_from_path(file_path)
-            
+
             if not images:
                 return None
-            
+
             # Convert each image to bytes
             image_bytes_list = []
             for page_num, image in enumerate(images):
@@ -40,9 +40,9 @@ class OCRServices:
                 image.save(img_byte_arr, format='PNG')
                 image_bytes = img_byte_arr.getvalue()
                 image_bytes_list.append((page_num + 1, image_bytes))
-                
+
             return image_bytes_list
-            
+
         except ImportError:
             raise ImportError("PDF processing requires pdf2image library. Install with: pip install pdf2image")
         except Exception as e:
@@ -76,13 +76,13 @@ class OCRServices:
                 try:
                     # Convert PDF to image bytes using our helper method
                     image_bytes_list = OCRServices.convert_pdf_to_image_bytes(file_path)
-                    
+
                     if not image_bytes_list:
                         return "Failed to extract images from PDF"
-                    
+
                     # Process all pages and collect responses
                     all_responses = []
-                    
+
                     for page_num, image_bytes in image_bytes_list:
                         # Use analyze_expense on the image bytes
                         response = textract_client.analyze_expense(
@@ -91,19 +91,19 @@ class OCRServices:
                         # Clean the response to remove Geometry, BoundingBox, and Polygon fields
                         cleaned_response = OCRServices._clean_textract_response(response)
                         all_responses.append((page_num, cleaned_response))
-                    
+
                     # Format the combined responses - only include the summary, not the full JSON
                     combined_summary = "AWS Textract Analysis Summary (Multiple Pages):\n\n"
-                    
+
                     for page_num, response in all_responses:
                         # Extract key information based on the API used
                         if 'ExpenseDocuments' in response:
                             # This is an analyze_expense response
                             combined_summary += f"--- PAGE {page_num} ---\n"
-                            
+
                             for doc_idx, doc in enumerate(response['ExpenseDocuments']):
                                 combined_summary += f"Document {doc_idx + 1}:\n"
-                                
+
                                 # Extract summary fields
                                 if 'SummaryFields' in doc:
                                     combined_summary += "  Summary Fields:\n"
@@ -111,7 +111,7 @@ class OCRServices:
                                         field_type = field.get('Type', {}).get('Text', 'Unknown')
                                         field_value = field.get('ValueDetection', {}).get('Text', 'N/A')
                                         combined_summary += f"    {field_type}: {field_value}\n"
-                                
+
                                 # Extract line item groups
                                 if 'LineItemGroups' in doc:
                                     for group_idx, group in enumerate(doc['LineItemGroups']):
@@ -124,7 +124,7 @@ class OCRServices:
                                                         field_type = field.get('Type', {}).get('Text', 'Unknown')
                                                         field_value = field.get('ValueDetection', {}).get('Text', 'N/A')
                                                         combined_summary += f"      {field_type}: {field_value}\n"
-                    
+
                     # Return only the summary, not the full JSON response
                     return combined_summary
 
@@ -138,19 +138,19 @@ class OCRServices:
                     response = textract_client.detect_document_text(
                         Document={'Bytes': image_bytes}
                     )
-                    
+
                     # Clean the response to remove Geometry, BoundingBox, and Polygon fields
                     cleaned_response = OCRServices._clean_textract_response(response)
-                    
+
                     # Extract text from response
                     summary = "AWS Textract Analysis Summary (DetectDocumentText):\n\n"
                     extracted_text = ""
                     for item in cleaned_response.get("Blocks", []):
                         if item.get("BlockType") == "LINE":
                             extracted_text += item.get("Text", "") + "\n"
-                    
+
                     summary += "Extracted Text:\n" + extracted_text
-                    
+
                     # Return only the summary, not the full JSON response
                     return summary
             else:
@@ -162,10 +162,10 @@ class OCRServices:
                 response = textract_client.analyze_expense(
                     Document={'Bytes': image_bytes}
                 )
-                
+
                 # Clean the response to remove Geometry, BoundingBox, and Polygon fields
                 cleaned_response = OCRServices._clean_textract_response(response)
-                
+
                 # Extract key information based on the API used
                 if 'ExpenseDocuments' in cleaned_response:
                     # This is an analyze_expense response
@@ -194,7 +194,7 @@ class OCRServices:
                                                 field_type = field.get('Type', {}).get('Text', 'Unknown')
                                                 field_value = field.get('ValueDetection', {}).get('Text', 'N/A')
                                                 summary += f"      {field_type}: {field_value}\n"
-                
+
                 # Return only the summary, not the full JSON response
                 return summary
 
@@ -205,23 +205,23 @@ class OCRServices:
     def _clean_textract_response(response):
         """
         Remove Geometry, BoundingBox, and Polygon fields from AWS Textract response
-        
+
         Args:
             response (dict): The original AWS Textract response
-            
+
         Returns:
             dict: The cleaned response with unwanted fields removed
         """
         # Create a deep copy of the response to avoid modifying the original
         full_response = json.loads(json.dumps(response))
-        
+
         # Fields to remove (expanded list to catch variations)
         fields_to_remove = [
             'Geometry', 'BoundingBox', 'Polygon', 'Relationships',
             'RowIndex', 'ColumnIndex', 'RowSpan', 'ColumnSpan',
             'CellGeometry', 'TableGeometry', 'TableBoundingBox', 'TablePolygon'
         ]
-        
+
         # Helper function to recursively remove fields from a dictionary
         def remove_fields(obj):
             if isinstance(obj, dict):
@@ -229,7 +229,7 @@ class OCRServices:
                 for field in fields_to_remove:
                     if field in obj:
                         del obj[field]
-                
+
                 # Process remaining fields recursively
                 for key, value in list(obj.items()):
                     obj[key] = remove_fields(value)
@@ -240,16 +240,16 @@ class OCRServices:
             else:
                 # Return primitive values as is
                 return obj
-        
+
         # Clean the response
         cleaned = remove_fields(full_response)
-        
+
         # For debugging: print the size reduction
         original_size = len(json.dumps(response))
         cleaned_size = len(json.dumps(cleaned))
         reduction_percent = ((original_size - cleaned_size) / original_size) * 100 if original_size > 0 else 0
         print(f"AWS Textract response cleaning: Original size: {original_size}, Cleaned size: {cleaned_size}, Reduction: {reduction_percent:.2f}%")
-        
+
         return cleaned
 
     @staticmethod
@@ -318,31 +318,31 @@ class OCRServices:
         try:
             # Get API key from environment variables
             api_key = os.getenv('MISTRAL_API_KEY')
-            
+
             if not api_key:
                 return "Mistral OCR credentials not configured in .env file"
 
             # Determine file type
             file_extension = os.path.splitext(file_path)[1].lower()
             file_name = os.path.basename(file_path)
-            
+
             # Check if file type is supported
             if file_extension not in ['.pdf', '.jpg', '.jpeg', '.png']:
                 return f"Unsupported file type for Mistral OCR: {file_extension}"
-            
+
             # For PDFs and images, we'll use base64 encoding
             with open(file_path, 'rb') as file:
                 file_bytes = file.read()
-                
+
             # Base64 encode the file
             encoded_file = base64.b64encode(file_bytes).decode('utf-8')
-            
+
             # Prepare headers for OCR request
             ocr_headers = {
                 'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'
             }
-            
+
             # Prepare the OCR payload based on file type
             if file_extension == '.pdf':
                 ocr_payload = {
@@ -357,7 +357,7 @@ class OCRServices:
                 # Create a data URL for the image
                 mime_type = f"image/{file_extension[1:]}" if file_extension != '.jpg' else "image/jpeg"
                 data_url = f"data:{mime_type};base64,{encoded_file}"
-                
+
                 ocr_payload = {
                     "model": "mistral-ocr-latest",
                     "document": {
@@ -365,45 +365,152 @@ class OCRServices:
                         "image_url": data_url
                     }
                 }
-            
+
             # Make the OCR request
             ocr_url = "https://api.mistral.ai/v1/ocr"
             ocr_response = requests.post(ocr_url, headers=ocr_headers, json=ocr_payload)
-            
+
             # Check if the OCR request was successful
             if ocr_response.status_code != 200:
                 return f"Mistral OCR API error: {ocr_response.status_code} - {ocr_response.text}"
-            
+
             # Process the OCR response
             result = ocr_response.json()
-            
+
             # Format the response for display
             formatted_response = json.dumps(result, indent=2)
-            
+
             # Create a summary of the OCR results
             summary = "Mistral OCR Analysis Summary:\n\n"
-            
+
             # Extract text content from the response
             if 'pages' in result:
                 for page in result['pages']:
                     page_num = page.get('index', 0)
                     summary += f"--- PAGE {page_num} ---\n"
-                    
+
                     # Add page dimensions if available
                     if 'dimensions' in page:
                         dimensions = page['dimensions']
                         summary += f"Dimensions: {dimensions.get('width', 'N/A')}x{dimensions.get('height', 'N/A')} (DPI: {dimensions.get('dpi', 'N/A')})\n"
-                    
+
                     # Add number of images if available
                     if 'images' in page:
                         summary += f"Images: {len(page['images'])}\n"
-                    
+
                     # Add markdown content if available
                     if 'markdown' in page:
                         summary += f"\nText Content:\n{page['markdown']}\n\n"
-            
+
             # Return both the summary and the full response
             return f"{summary}\n\nFull Response:\n{formatted_response}"
 
         except Exception as e:
             return f"Error processing with Mistral OCR: {str(e)}"
+
+    @staticmethod
+    def claude_haiku_ocr(file_path):
+        """
+        Process document using Claude 3 Haiku for OCR via Anthropic API
+
+        Args:
+            file_path (str): Path to the document file
+
+        Returns:
+            str: Extracted text and analysis from the document
+        """
+        try:
+            # Get API key from environment variables
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+
+            if not api_key:
+                return "Anthropic API credentials not configured in .env file"
+
+            # Determine file type
+            file_extension = os.path.splitext(file_path)[1].lower()
+
+            # Check if file type is supported
+            if file_extension not in ['.pdf', '.jpg', '.jpeg', '.png']:
+                return f"Unsupported file type for Claude 3 Haiku OCR: {file_extension}"
+
+            # For PDFs and images, we'll use base64 encoding
+            with open(file_path, 'rb') as file:
+                file_bytes = file.read()
+
+            # Base64 encode the file
+            encoded_file = base64.b64encode(file_bytes).decode('utf-8')
+
+            # Determine media type based on file extension
+            if file_extension == '.pdf':
+                media_type = "application/pdf"
+            elif file_extension == '.jpg' or file_extension == '.jpeg':
+                media_type = "image/jpeg"
+            elif file_extension == '.png':
+                media_type = "image/png"
+            else:
+                media_type = "application/octet-stream"
+
+            # Prepare headers for Anthropic API request
+            headers = {
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+
+            # Prepare the message payload
+            payload = {
+                "model": "claude-3-haiku-20240307",
+                "max_tokens": 4000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Please extract all text from this document. Then provide a structured analysis of the content including: 1) Document type, 2) Key information, 3) Any tables or structured data, 4) Any notable elements like headers, footers, or watermarks."
+                            },
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": encoded_file
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+
+            # Make the API request
+            api_url = "https://api.anthropic.com/v1/messages"
+            response = requests.post(api_url, headers=headers, json=payload)
+
+            # Check if the request was successful
+            if response.status_code != 200:
+                return f"Claude 3 Haiku API error: {response.status_code} - {response.text}"
+
+            # Process the response
+            result = response.json()
+
+            # Extract the content from the response
+            if 'content' in result and len(result['content']) > 0:
+                # Format the full response for debugging
+                formatted_full_response = json.dumps(result, indent=2)
+
+                # Extract the text content from the response
+                text_content = ""
+                for content_block in result['content']:
+                    if content_block.get('type') == 'text':
+                        text_content += content_block.get('text', '')
+
+                # Create a summary header
+                summary = "Claude 3 Haiku OCR Analysis:\n\n"
+
+                # Return both the extracted text and the full response
+                return f"{summary}{text_content}\n\nFull API Response:\n{formatted_full_response}"
+            else:
+                return "No content returned from Claude 3 Haiku API"
+
+        except Exception as e:
+            return f"Error processing with Claude 3 Haiku OCR: {str(e)}"
